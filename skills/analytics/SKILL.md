@@ -37,6 +37,15 @@ tdq login
 
 Prompts for email and password, mints a bearer, then **lists the apps on your TelemetryDeck account and asks you to pick one**. No need to know the app UUID up front. If the listing endpoint isn't exposed for your account, the CLI falls back to a manual UUID prompt.
 
+Accounts that sign in with Google/SSO have no password, so `login` can never succeed for them. Use a personal access token (dashboard user menu → Personal Access Tokens, paid plans only):
+
+```bash
+tdq login --pat                    # hidden prompt
+echo "$TDPAT" | tdq login --pat    # or piped, for CI
+```
+
+The token is validated before it is stored, so a bad paste leaves any working credentials untouched. It is used until the API rejects it; there is no password to re-mint from, so when it expires (one year maximum) or is revoked, run `tdq login --pat` again.
+
 Secrets (password + bearer) go into the OS-native store:
 - **macOS** — Keychain via `security` (service `telemetrydeck-cli`).
 - **Linux** — libsecret via `secret-tool` if installed (GNOME Keyring, KWallet-libsecret, etc.).
@@ -79,7 +88,7 @@ Every query command also accepts a one-off `--app-id <UUID>` flag that bypasses 
 
 | Command | Purpose |
 |---|---|
-| `login [--app-id UUID] [--reset]` | Email/password prompt, mint bearer, interactive app picker. `--app-id` skips the picker. |
+| `login [--app-id UUID] [--pat [TOKEN]] [--reset]` | Email/password prompt, mint bearer, interactive app picker. `--app-id` skips the picker. `--pat` authenticates with a personal access token instead — required for SSO accounts. |
 | `apps [list\|use\|add\|remove\|refresh]` | Manage the registered apps and switch the current one. Bare `apps` = list. |
 | `logout` | Wipe stored secrets and config file. |
 | `whoami` | Show user/org info (raw JSON). |

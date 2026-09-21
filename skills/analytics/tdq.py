@@ -11,7 +11,7 @@ platform-appropriate config directory (`~/Library/Application Support/` on
 macOS, `$XDG_CONFIG_HOME` or `~/.config/` on Linux, `%APPDATA%\\` on Windows).
 
 Subcommands:
-  login                 Prompt for email/password, auto-discover apps, pick one.
+  login                 Prompt for email/password (or --pat), auto-discover apps, pick one.
   logout                Clear stored secrets and config file.
   whoami                Verify token, show user/org info.
   apps                  List / add / remove / switch registered apps.
@@ -21,10 +21,13 @@ Subcommands:
   signals               Convenience: top events over last N days.
 
 Auth resolution order (per invocation):
-  1. Stored bearer, if present and not within 5 min of expiry.
+  1. Stored bearer, if present and not within 5 min of expiry. A personal
+     access token stored by `login --pat` lives here and has no expiry, so it
+     is used until the API rejects it.
   2. Stored password → POST /api/v3/users/login → new bearer.
   3. On HTTP 401, step 2 once, then retry.
   4. If (2) has no password, interactive prompt; stash in secret store.
+     SSO accounts have no password and must use `login --pat`.
 
 App UUID resolution:
   1. --app-id flag
@@ -343,6 +346,54 @@ def _token_still_fresh(cfg: dict[str, Any]) -> str | None:
     return None
 
 
+def _store_pat(cfg: dict[str, Any], value: str) -> str:
+    """Validate a personal access token, store it, and record the account email.
+
+    The token may come from the flag's value, stdin (when piped), or a hidden
+    prompt. Accounts that sign in with SSO have no password to exchange for a
+    bearer, so this is their only route to an authenticated CLI.
+    """
+    token = value.strip()
+    if not token:
+        token = (getpass.getpass("TelemetryDeck personal access token: ")
+                 if sys.stdin.isatty() else sys.stdin.read()).strip()
+    if not token:
+        sys.exit("Personal access token required.")
+
+    try:
+        info = http("GET", "/api/v3/users/info", token=token)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        if e.code in (401, 403):
+            sys.exit(
+                f"Token rejected ({e.code}). Check it was copied whole and has "
+                f"not been revoked. Personal access tokens also require a paid "
+                f"plan.\n{body}"
+            )
+        sys.exit(f"Token check failed ({e.code}): {body}")
+    except urllib.error.URLError as e:
+        sys.exit(f"Token check network error: {e}")
+
+    secret_set(SECRET_ACCT_TOKEN, token)
+    if info.get("email"):
+        cfg["email"] = info["email"]
+    # An expiry left by an earlier password login would force a re-mint of a
+    # token that never expires on that schedule.
+    cfg.pop("token_expires_at", None)
+    save_config(cfg)
+    return token
+
+
+def _no_password_hint() -> str:
+    """Message for the password dead end, which SSO accounts always hit."""
+    stored = "A token is stored but was rejected. " if secret_get(SECRET_ACCT_TOKEN) else ""
+    return (
+        f"{stored}No password on file. Run: tdq login\n"
+        f"If your account signs in with Google/SSO it has no password — "
+        f"use a personal access token instead: tdq login --pat"
+    )
+
+
 def _mint_token(cfg: dict[str, Any], *, interactive: bool) -> str:
     email = cfg.get("email") or os.environ.get("TELEMETRYDECK_EMAIL")
     password = keychain_get(KEYCHAIN_ACCT_PASSWORD) or os.environ.get("TELEMETRYDECK_PASSWORD")
@@ -362,11 +413,12 @@ def _mint_token(cfg: dict[str, Any], *, interactive: bool) -> str:
 
     if not password:
         if not interactive:
-            sys.exit("No password on file. Run: tdq login")
+            sys.exit(_no_password_hint())
         if not sys.stdin.isatty():
             sys.exit(
                 "stdin is not a TTY — cannot prompt for password.\n"
-                "Run `tdq login` directly in your terminal."
+                "Run `tdq login` directly in your terminal, or authenticate "
+                "with a personal access token: `tdq login --pat`."
             )
         password = getpass.getpass("TelemetryDeck password: ")
         if not password:
@@ -971,9 +1023,9 @@ def cmd_login(args: argparse.Namespace) -> None:
         cfg.pop("token_expires_at", None)
         save_config(cfg)
         cfg = load_config()
-    token = _mint_token(cfg, interactive=True)
+    token = _store_pat(cfg, args.pat) if args.pat is not None else _mint_token(cfg, interactive=True)
     info = http("GET", "/api/v3/users/info", token=token)
-    cfg = load_config()  # _mint_token persisted email + token_expires_at
+    cfg = load_config()  # the step above persisted email (and any expiry)
 
     # App selection
     chosen: str | None = args.app_id
@@ -1567,11 +1619,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_login = sub.add_parser(
         "login",
-        help="Prompt for email/password, mint a bearer, then pick an app from your account.",
+        help="Prompt for email/password (or use --pat), mint a bearer, then pick an app from your account.",
     )
     p_login.add_argument(
         "--app-id",
         help="Skip the interactive app picker and use this UUID directly.",
+    )
+    p_login.add_argument(
+        "--pat",
+        nargs="?",
+        const="",
+        metavar="TOKEN",
+        help="Authenticate with a personal access token instead of email/password — "
+             "the only option for SSO accounts, which have no password. Pass the "
+             "token, omit it to be prompted, or pipe it on stdin.",
     )
     p_login.add_argument("--reset", action="store_true", help="Wipe existing creds first.")
     p_login.set_defaults(func=cmd_login)
