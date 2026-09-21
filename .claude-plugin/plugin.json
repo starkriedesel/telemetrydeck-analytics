@@ -1,12 +1,12 @@
 {
   "name": "telemetrydeck-analytics",
   "description": "Claude Code plugin and skill for working with TelemetryDeck product analytics. Ask questions in plain English, get real queries, real tables, and honest caveats.",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "author": {
     "name": "Anton Genkin"
   },
-  "homepage": "https://github.com/agenkin/telemetrydeck-analytics",
-  "repository": "https://github.com/agenkin/telemetrydeck-analytics",
+  "homepage": "https://github.com/starkriedesel/telemetrydeck-analytics",
+  "repository": "https://github.com/starkriedesel/telemetrydeck-analytics",
   "license": "MIT",
   "keywords": [
     "telemetrydeck",
