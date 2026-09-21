@@ -56,10 +56,13 @@ Inside a Claude Code session, run:
 
 Claude walks you through email + password, mints a bearer, then shows a numbered picker of every app visible on your account. Pick one and you're done. Secrets land in your OS-native secret store (macOS Keychain / Linux libsecret / file fallback); nothing touches your repo.
 
+**Signing in with Google/SSO?** Your account has no password to exchange for a bearer, so use a [personal access token](https://telemetrydeck.com/docs/api/api-token/) instead — generate one from the dashboard user menu, then `tdq login --pat` and paste it at the hidden prompt.
+
 Prefer to do it from your shell? The `tdq` CLI exposes the same flow — it's on `PATH` once the plugin is enabled:
 
 ```bash
 tdq login                          # same interactive flow
+tdq login --pat                    # SSO accounts: paste a personal access token
 tdq apps add <uuid>                # register another app later
 tdq apps use <name|uuid|index>     # switch current app
 ```
