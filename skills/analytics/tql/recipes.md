@@ -7,7 +7,6 @@ Copy-paste starting points for the questions that don't fit `dau` / `mau` / `gro
 ```json
 {
   "queryType":"timeseries",
-  "dataSource":"telemetry-signals",
   "granularity":"day",
   "aggregations":[{"type":"userCount","name":"dau"}],
   "filter":{"__auto_app_and_test_mode_filter__":true},
@@ -21,7 +20,6 @@ Copy-paste starting points for the questions that don't fit `dau` / `mau` / `gro
 ```json
 {
   "queryType":"timeseries",
-  "dataSource":"telemetry-signals",
   "granularity":"day",
   "aggregations":[
     {"type":"eventCount","name":"events"},
@@ -42,7 +40,6 @@ Copy-paste starting points for the questions that don't fit `dau` / `mau` / `gro
 ```json
 {
   "queryType":"timeseries",
-  "dataSource":"telemetry-signals",
   "granularity":"day",
   "aggregations":[
     {"type":"filtered","filter":{"type":"selector","dimension":"license","value":"Pro"},
@@ -61,7 +58,6 @@ Copy-paste starting points for the questions that don't fit `dau` / `mau` / `gro
 ```json
 {
   "queryType":"topN",
-  "dataSource":"telemetry-signals",
   "granularity":"all",
   "dimension":{"type":"default","dimension":"countryCode","outputName":"country"},
   "metric":{"type":"numeric","metric":"users"},
@@ -78,7 +74,6 @@ Copy-paste starting points for the questions that don't fit `dau` / `mau` / `gro
 ```json
 {
   "queryType":"groupBy",
-  "dataSource":"telemetry-signals",
   "granularity":"all",
   "dimensions":[
     {"type":"default","dimension":"license","outputName":"license"},
@@ -105,7 +100,6 @@ Note: auto-filter sentinel doesn't mix with custom filters — inline the full `
 ```json
 {
   "queryType":"topN",
-  "dataSource":"telemetry-signals",
   "granularity":"all",
   "dimension":{"type":"extraction","dimension":"appVersion","outputName":"major",
                "extractionFn":{"type":"regex","expr":"^(\\d+)","index":1,"replaceMissingValueWith":"unknown"}},
@@ -123,7 +117,6 @@ Note: auto-filter sentinel doesn't mix with custom filters — inline the full `
 ```json
 {
   "queryType":"funnel",
-  "dataSource":"telemetry-signals",
   "granularity":"all",
   "steps":[
     {"type":"selector","dimension":"type","value":"App_launched"},
@@ -141,7 +134,6 @@ Note: auto-filter sentinel doesn't mix with custom filters — inline the full `
 ```json
 {
   "queryType":"retention",
-  "dataSource":"telemetry-signals",
   "granularity":"all",
   "targetEvent":"App_launched",
   "retentionPeriods":8,
@@ -155,7 +147,6 @@ Note: auto-filter sentinel doesn't mix with custom filters — inline the full `
 ```json
 {
   "queryType":"retention",
-  "dataSource":"telemetry-signals",
   "granularity":"all",
   "targetEvent":"App_launched",
   "retentionPeriods":8,
@@ -181,7 +172,6 @@ Swap `relativeIntervals` for `intervals`:
 ```json
 {
   "queryType":"scan",
-  "dataSource":"telemetry-signals",
   "granularity":"all",
   "columns":["receivedAt","type","appVersion","license"],
   "resultFormat":"compactedList",

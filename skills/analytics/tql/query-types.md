@@ -19,7 +19,6 @@ Every query has these:
 ```json
 {
   "queryType": "<type>",
-  "dataSource": "telemetry-signals",
   "granularity": "day",
   "filter": { "__auto_app_and_test_mode_filter__": true },
   "relativeIntervals": [{
@@ -34,7 +33,6 @@ Every query has these:
 ```json
 {
   "queryType": "timeseries",
-  "dataSource": "telemetry-signals",
   "granularity": "day",
   "aggregations": [
     {"type":"eventCount","name":"events"},
@@ -53,7 +51,6 @@ One row per bucket. Bucket size = `granularity`.
 ```json
 {
   "queryType": "topN",
-  "dataSource": "telemetry-signals",
   "granularity": "all",
   "dimension": {"type":"default","dimension":"countryCode","outputName":"country"},
   "metric": {"type":"numeric","metric":"count"},
@@ -72,7 +69,6 @@ One dimension only. Ranked. Capped at `threshold`.
 ```json
 {
   "queryType": "groupBy",
-  "dataSource": "telemetry-signals",
   "granularity": "all",
   "dimensions": [
     {"type":"default","dimension":"license","outputName":"license"},
@@ -92,7 +88,6 @@ Multiple dimensions OK. No implicit ordering — sort client-side.
 ```json
 {
   "queryType": "scan",
-  "dataSource": "telemetry-signals",
   "granularity": "all",
   "columns": ["receivedAt","type","clientUser","appVersion"],
   "resultFormat": "compactedList",
@@ -112,7 +107,6 @@ See `funnel.md` for full semantics.
 ```json
 {
   "queryType": "funnel",
-  "dataSource": "telemetry-signals",
   "granularity": "all",
   "steps": [
     {"type":"selector","dimension":"type","value":"App_launched"},
@@ -132,7 +126,6 @@ See `retention.md`.
 ```json
 {
   "queryType": "retention",
-  "dataSource": "telemetry-signals",
   "granularity": "all",
   "targetEvent": "App_launched",
   "retentionPeriods": 8,

@@ -7,7 +7,6 @@
 ```json
 {
   "queryType": "funnel",
-  "dataSource": "telemetry-signals",
   "granularity": "all",
   "steps": [
     {"type":"selector","dimension":"type","value":"App_launched"},
