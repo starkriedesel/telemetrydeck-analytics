@@ -33,3 +33,4 @@ Reach for raw TQL only if the recipes don't fit. Check `SKILL.md`'s subcommand t
 3. **Every query needs `queryType` and `granularity`.** Even `queryType:"all"` — the field is required.
 4. **Prefer `userCount` over `cardinality`** for unique-user counting (the Druid `cardinality` aggregator is deprecated in TelemetryDeck; use `thetaSketch` or `userCount`).
 5. **Time scoping**: `relativeIntervals` (array, one or more objects) for dynamic windows; `intervals` (ISO 8601 strings) for fixed dates.
+6. **Leave `dataSource` out.** The query API requires it, but the CLI resolves your organization's namespace and injects it. Hand-writing it is how you get `401 User can not access <value>`; the old fixed `"telemetry-signals"` value is dead and is rewritten if it appears.

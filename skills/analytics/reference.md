@@ -1,8 +1,8 @@
-# TelemetryDeck v3 API — HTTP & auth reference
+# TelemetryDeck API — HTTP & auth reference
 
-Load only when extending `tdq.py` or debugging the raw HTTP surface. For TQL syntax (query types, filters, aggregators, intervals, etc.) see `tql/index.md`. For normal usage, the CLI handles auth, async orchestration, and filter injection.
+Load only when extending `tdq.py` or debugging the raw HTTP surface. For TQL syntax (query types, filters, aggregators, intervals, etc.) see `tql/index.md`. For normal usage, the CLI handles auth, `dataSource` resolution, and filter injection.
 
-**Status:** v3 beta. Nominally Tier 2+ gated; grace period in effect, not enforced at time of writing. No documented per-minute rate limit. Sync endpoint may terminate long queries.
+**Status:** auth and metadata run on `/api/v3`; queries run on `/api/v4/query/tql`. The v3 async query endpoints (`calculate-async` + task polling) are gone — they now 404. Personal access tokens and the query API require a paid plan. No documented per-minute rate limit.
 
 ## Base URL & auth
 
@@ -26,18 +26,26 @@ Authorization: Basic base64(email:password)
 | `appID` (UUID) | App detail in TelemetryDeck dashboard; same UUID passed to the SDK `initialize(config: .init(appID:))` | `selector` filter dimension on every query |
 | `insightID` | URL when viewing an insight | Path parameter to resolve a saved insight to TQL |
 | `orgID` / `userID` | `GET /api/v3/users/info` | Not needed for queries; bearer is scoped to the user |
+| `dataSource` (org namespace, e.g. `com.yourorganization`) | `namespace` field of `GET /api/v3/organizations/` | Mandatory top-level key on every v4 query |
 
-## Async query (3 steps)
+## Running a query
+
+One synchronous call:
 
 ```
-POST /api/v3/query/calculate-async/     { ...TQL... }  → { "queryTaskID": "..." }
-GET  /api/v3/task/<taskID>/status/                     → { "status": "running" | "successful" | "failed" }
-GET  /api/v3/task/<taskID>/value/                      → query result
+POST /api/v4/query/tql     { ...TQL..., "dataSource": "com.yourorganization" }  → result
 ```
 
-Poll `status` at a modest cadence (the CLI polls every 1s, caps at 30 polls / 120s wallclock). If a query pushes those limits, tighten `threshold` and shrink `relativeIntervals` instead of raising the caps — long queries either time out server-side or return data too coarse to trust.
+`dataSource` is required; omitting it returns `401 {"reason": "Missing key 'dataSource'"}`, and passing the org UUID or display name instead of the namespace returns `401 User can not access <value>`. The CLI resolves it once and caches it in `config.json`; `TELEMETRYDECK_DATA_SOURCE` overrides.
 
-Sync variant: drop `-async` from the path. Discouraged; the server may terminate long-running sync queries and the docs flag that future support is uncertain.
+The server may take up to ~2 minutes on a heavy query. If one pushes that, tighten `threshold` and shrink `relativeIntervals` rather than waiting — a query that slow returns data too coarse to trust.
+
+Two result shapes come back, and `_unwrap_envelope` normalizes both to a list of buckets:
+
+```
+[{ "timestamp": "...", "result": {...} | [...] }, ...]     # observed for timeseries and topN
+{ "result": { "rows": [...], "type": "topNResult" } }      # enveloped form
+```
 
 ## Running a saved insight
 
@@ -46,7 +54,7 @@ Two-step: resolve the insight to TQL, then execute.
 ```
 POST /api/v3/insights/<insightID>/query/     { "relativeInterval": { ... } }
 → full TQL query JSON
-→ submit to /api/v3/query/calculate-async/
+→ submit to /api/v4/query/tql
 ```
 
 The CLI's `insight` subcommand does both.
@@ -56,7 +64,8 @@ The CLI's `insight` subcommand does both.
 - `401 Unauthorized` — bearer expired or invalid. CLI re-mints once automatically.
 - `403 Forbidden` — tier gate or scope issue.
 - `4xx` with a JSON body — inspect the body, the error messages are usually specific.
-- Network timeout — the `calculate-async` endpoint returns a task id almost immediately; if submitting the task times out, something is wrong with the JSON shape, not the server load.
+- `401` with a JSON `reason` — not always auth. `Missing key 'dataSource'` and `User can not access <x>` are both `dataSource` problems, and the CLI's 401 retry will mask them as a token refresh failure.
+- `404` on `/api/v3/query/...` — the removed async endpoints; use `/api/v4/query/tql`.
 
 ## Where to find TQL syntax
 

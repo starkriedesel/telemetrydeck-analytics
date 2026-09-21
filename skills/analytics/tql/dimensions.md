@@ -51,7 +51,7 @@ Example — bucket appVersion into major versions only:
 }
 ```
 
-## Standard dimensions on `telemetry-signals`
+## Standard signal dimensions
 
 From the SDK + TelemetryDeck ingest:
 
