@@ -190,7 +190,6 @@ For queries the recipes don't cover, pipe TQL to `query -`:
 cat <<'EOF' | tdq query - --format table
 {
   "queryType": "topN",
-  "dataSource": "telemetry-signals",
   "granularity": "all",
   "aggregations": [{"type": "eventCount", "name": "count"}],
   "metric": {"type": "numeric", "metric": "count"},

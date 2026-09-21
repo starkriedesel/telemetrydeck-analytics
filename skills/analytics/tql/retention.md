@@ -7,7 +7,6 @@
 ```json
 {
   "queryType": "retention",
-  "dataSource": "telemetry-signals",
   "granularity": "all",
   "targetEvent": "App_launched",
   "retentionPeriods": 8,

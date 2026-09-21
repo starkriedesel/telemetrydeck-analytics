@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TelemetryDeck v3 query CLI — portable, OS-native secret storage.
+"""TelemetryDeck query CLI — portable, OS-native secret storage.
 
 No `.env` needed. Credentials live in the OS-native secret store when one is
 available:
@@ -54,7 +54,6 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -66,6 +65,9 @@ SECRET_ACCT_PASSWORD = "password"
 SECRET_ACCT_TOKEN = "token"
 
 AUTO_FILTER_SENTINEL = "__auto_app_and_test_mode_filter__"
+# v3 exposed a single fixed table under this name. v4 wants the org namespace,
+# and rejects the old literal, so it is treated as "unset" wherever it appears.
+LEGACY_DATA_SOURCE = "telemetry-signals"
 
 
 # ---------- Platform-aware paths ----------
@@ -789,38 +791,73 @@ def app_filter(app_id: str, *, include_test_mode: bool = False) -> dict:
     return {"type": "and", "fields": fields}
 
 
-def run_query(query: dict, *, poll_interval: float = 1.0, timeout_s: float = 120.0) -> Any:
-    task = http_auth("POST", "/api/v3/query/calculate-async/", query)
-    task_id = task.get("queryTaskID") or task.get("id") or task.get("taskID")
-    if not task_id:
-        sys.exit(f"No task id in response: {task}")
-    deadline = time.time() + timeout_s
-    polls = 0
-    while True:
-        status = http_auth("GET", f"/api/v3/task/{task_id}/status/")
-        state = status.get("status") or status.get("state")
-        if state == "successful":
-            break
-        if state == "failed":
-            sys.exit(f"Query failed: {status}")
-        if time.time() > deadline:
-            sys.exit(f"Query timed out after {timeout_s}s (last state: {state})")
-        polls += 1
-        if polls > 30:
-            sys.exit(f"Query exceeded 30 polls — reshape the query (state: {state})")
-        time.sleep(poll_interval)
-    raw = http_auth("GET", f"/api/v3/task/{task_id}/value/")
+def discover_data_source(app_id: str | None) -> str | None:
+    """Namespace of the org owning `app_id`, or of the only org on the account."""
+    try:
+        orgs = http_auth("GET", "/api/v3/organizations/")
+    except SystemExit:
+        return None
+    if not isinstance(orgs, list):
+        return None
+    candidates = [o for o in orgs if isinstance(o, dict) and o.get("namespace")]
+    if not candidates:
+        return None
+    if len(candidates) > 1 and app_id:
+        try:
+            apps = http_auth("GET", "/api/v3/apps/")
+        except SystemExit:
+            apps = []
+        owner = next(
+            (a.get("organizationID") for a in apps
+             if isinstance(a, dict) and a.get("id") == app_id),
+            None,
+        )
+        for org in candidates:
+            if org.get("id") == owner:
+                return str(org["namespace"])
+    return str(candidates[0]["namespace"])
+
+
+def get_data_source() -> str:
+    """Resolve the org namespace the v4 query API requires as `dataSource`.
+
+    Order: `TELEMETRYDECK_DATA_SOURCE` env var, cached `data_source` in config,
+    then discovery from the API (cached on success).
+    """
+    env = os.environ.get("TELEMETRYDECK_DATA_SOURCE")
+    if env:
+        return env
+    cfg = load_config()
+    cached = cfg.get("data_source")
+    if cached:
+        return str(cached)
+    namespace = discover_data_source(cfg.get("current_app_id"))
+    if not namespace:
+        sys.exit(
+            "Could not determine your organization namespace, which the query "
+            "API requires as `dataSource`. Set TELEMETRYDECK_DATA_SOURCE to it "
+            "(it looks like `com.yourorganization`)."
+        )
+    cfg = load_config()
+    cfg["data_source"] = namespace
+    save_config(cfg)
+    return namespace
+
+
+def run_query(query: dict) -> Any:
+    """Run a TQL query synchronously and return the list-of-buckets result."""
+    if query.get("dataSource") in (None, "", LEGACY_DATA_SOURCE):
+        query = {**query, "dataSource": get_data_source()}
+    raw = http_auth("POST", "/api/v4/query/tql", query)
     if os.environ.get("TDQ_RAW"):
         sys.stderr.write("--- RAW QUERY RESULT ---\n")
         sys.stderr.write(json.dumps(raw, indent=2) + "\n")
         sys.stderr.write("------------------------\n")
-    # Unwrap v3 envelope once, at the source. Downstream code expects the
-    # list-of-buckets shape. See `_flatten_result` for the shape guide.
     return _unwrap_envelope(raw)
 
 
 def _unwrap_envelope(result: Any) -> Any:
-    """Strip the v3 `{"result": {"rows": [...], "type": "..."}}` envelope.
+    """Strip the `{"result": {"rows": [...], "type": "..."}}` envelope.
 
     Pass-through for already-unwrapped list results. Returns [] for an empty
     envelope rather than the dict, so downstream `result[0]` works uniformly.
@@ -1208,7 +1245,6 @@ def cmd_doctor(args: argparse.Namespace) -> None:
         # mask a real parse bug. 7d should have something for any live app.
         q = {
             "queryType": "topN",
-            "dataSource": "telemetry-signals",
             "granularity": "all",
             "aggregations": [{"type": "eventCount", "name": "count"}],
             "metric": {"type": "numeric", "metric": "count"},
@@ -1281,7 +1317,6 @@ def cmd_signals(args: argparse.Namespace) -> None:
     app_id = get_app_id(args, interactive=True)
     query = {
         "queryType": "topN",
-        "dataSource": "telemetry-signals",
         "granularity": "all",
         "aggregations": [{"type": "eventCount", "name": "count"}],
         "metric": {"type": "numeric", "metric": "count"},
@@ -1322,7 +1357,6 @@ def cmd_dau(args: argparse.Namespace) -> None:
     )
     query = {
         "queryType": "timeseries",
-        "dataSource": "telemetry-signals",
         "granularity": "day",
         "aggregations": [
             {"type": "thetaSketch", "name": "users", "fieldName": "clientUser"}
@@ -1346,7 +1380,6 @@ def cmd_mau(args: argparse.Namespace) -> None:
         interval = month_interval(args.months)
     query = {
         "queryType": "timeseries",
-        "dataSource": "telemetry-signals",
         "granularity": "month",
         "aggregations": [
             {"type": "thetaSketch", "name": "users", "fieldName": "clientUser"}
@@ -1373,7 +1406,6 @@ def cmd_groupby(args: argparse.Namespace) -> None:
         agg = {"type": "eventCount", "name": "count"}
     query = {
         "queryType": "groupBy",
-        "dataSource": "telemetry-signals",
         "granularity": "all",
         "dimensions": [
             {"type": "default", "dimension": args.dimension, "outputName": args.dimension}
@@ -1398,7 +1430,6 @@ def cmd_events(args: argparse.Namespace) -> None:
     def run(days: int) -> list:
         q = {
             "queryType": "topN",
-            "dataSource": "telemetry-signals",
             "granularity": "all",
             "aggregations": [{"type": "eventCount", "name": "count"}],
             "metric": {"type": "numeric", "metric": "count"},
@@ -1454,7 +1485,6 @@ def cmd_test(args: argparse.Namespace) -> None:
     queries: dict[str, dict] = {
         "timeseries": {
             "queryType": "timeseries",
-            "dataSource": "telemetry-signals",
             "granularity": "day",
             "aggregations": [{"type": "eventCount", "name": "count"}],
             "filter": filt,
@@ -1462,7 +1492,6 @@ def cmd_test(args: argparse.Namespace) -> None:
         },
         "topN": {
             "queryType": "topN",
-            "dataSource": "telemetry-signals",
             "granularity": "all",
             "aggregations": [{"type": "eventCount", "name": "count"}],
             "metric": {"type": "numeric", "metric": "count"},
@@ -1473,7 +1502,6 @@ def cmd_test(args: argparse.Namespace) -> None:
         },
         "groupBy": {
             "queryType": "groupBy",
-            "dataSource": "telemetry-signals",
             "granularity": "all",
             "dimensions": [{"type": "default", "dimension": "type", "outputName": "event"}],
             "aggregations": [{"type": "eventCount", "name": "count"}],
